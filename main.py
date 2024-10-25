@@ -1,4 +1,7 @@
+import asyncio
 import os
+
+import aiohttp
 import requests
 import json
 import logging
@@ -154,15 +157,15 @@ class ApiRequest:
                     exampaper = english_data['exampaper']
                     return [answercard, exampaper]
                 else:
-                    print("未匹配courseCode=ENGLISH的元素")
+                    logging.error("未匹配courseCode=ENGLISH的元素")
             else:
-                print("JSON 数据中无courseCode=ENGLISH的元素")
+                logging.error("JSON 数据中无courseCode=ENGLISH的元素")
                 return None
         except json.JSONDecodeError as e:
-            print(f"JSON解析错误: {e}")
+            logging.error(f"JSON解析错误: {e}")
             return None
         except KeyError as e:
-            print(f"字段提取错误: {e}")
+            logging.error(f"字段提取错误: {e}")
             return None
 
     def get_ai_marking_info(self, exampaper_id):
@@ -268,6 +271,29 @@ class ApiRequest:
                 data = json.loads(response.content)
                 exam_info = data['data']
                 return exam_info
+            else:
+                logging.error("请求失败，状态码为：%d", response.status_code)
+                raise Exception(f"请求失败，状态码为：{response.status_code}")
+        except requests.exceptions.RequestException as e:
+            logging.error("请求异常：%s", str(e))
+            raise Exception(f"请求异常：{str(e)}")
+
+    def get_basicinfo(self, exampaper_id):
+        """
+        获取考试中考试信息
+        :param exampaper_id:考试examid
+        :return: exampaper的json信息
+        """
+
+        url = f"{self.base_url}/api/examcenter/teacher/exam/basicinfo?exampaperId={exampaper_id}"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+
+            if response.status_code == 200:
+                data = json.loads(response.content)
+                exampaper_info = data['data']
+                return exampaper_info
             else:
                 logging.error("请求失败，状态码为：%d", response.status_code)
                 raise Exception(f"请求失败，状态码为：{response.status_code}")
@@ -445,7 +471,7 @@ class ApiRequest:
             logging.error("JSON 解析错误：%s", str(e))
             raise Exception(f"JSON 解析错误：{str(e)}")
 
-    def get_stu_answercards(self, exampaper_id, stu_id):
+    async def get_stu_answercards(self, session, exampaper_id, stu_id):
         """
         获取学生的试卷url
         :param exampaper_id:
@@ -459,19 +485,24 @@ class ApiRequest:
         }
 
         try:
-            response = requests.get(url, headers=self.headers, params=params)
-
-            if response.status_code == 200:
-                data = json.loads(response.content)
-                stu_img_urls = data['data']['stuAnswerImgurls']
-                stu_img_url_list = stu_img_urls.split("@##@")
-                return stu_img_url_list
-            else:
-                logging.error("请求失败，状态码为：%d", response.status_code)
-                raise Exception(f"请求失败，状态码为：{response.status_code}")
+            async with session.get(url, headers=self.headers, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    stu_img_urls = data['data']['stuAnswerImgurls']
+                    stu_img_url_list = stu_img_urls.split("@##@")
+                    return stu_img_url_list
+                else:
+                    logging.error("请求失败，状态码为：%d", response.status)
+                    raise Exception(f"请求失败，状态码为：{response.status}")
         except requests.exceptions.RequestException as e:
             logging.error("请求异常：%s", str(e))
             raise Exception(f"请求异常：{str(e)}")
+
+    async def get_all_stu_answercards(self, exampaper_id, stu_list):
+        async with aiohttp.ClientSession() as session:
+            tasks = [self.get_stu_answercards(session, exampaper_id, stu['id']) for stu in stu_list]
+            results = await asyncio.gather(*tasks)
+            return [url for sublist in results for url in sublist]
 
     @staticmethod
     def download_images(url_list, **kwargs):
@@ -520,26 +551,30 @@ class ApiRequest:
                     # 更新 tqdm 进度条
                     pbar.update(1)
 
-    def copy_ai_marking(self):
-        """
-        复制智能阅卷设置
-        考试设置得为空
-        TODO：后期添加清空智能阅卷设置，后再进行复制
-        """
-        examination_id = 21507
+    def login_to_school(self, **kwargs):
+        self.base_envi = kwargs.get('base_envi', "xqdsj")
+        self.school_id = kwargs.get('school_id', 7)
 
-        # 生产拿去考试信息 examination_id =21365
-        self.base_envi = "xqdsj"
-        self.school_id = 7
-
-        username = "13951078683@xuece"
-        password = "c50d98c79dbdb8049ab1571444771e68"
+        username = kwargs.get('username', "13951078683@xuece")
+        password = kwargs.get('password', "c50d98c79dbdb8049ab1571444771e68")
 
         self._update_headers()
         self.configure_logging()
 
         self.login_and_get_auth_token(username, password)
         self.switch_school()
+
+    def copy_ai_marking(self, **kwargs):
+        """
+        复制智能阅卷设置
+        考试设置得为空
+        TODO：后期添加清空智能阅卷设置，后再进行复制
+        """
+        examination_id = kwargs.get('examination_id', 22011)
+
+        # 生产拿去考试信息 examination_id =21365
+        self.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
+                             password="c50d98c79dbdb8049ab1571444771e68")
 
         data = self.get_answercard_detail(examination_id)
         datalist = self.extract_data(data)
@@ -551,20 +586,12 @@ class ApiRequest:
         ai_marking_info = self.get_ai_marking_info(exampaper_id)
 
         # test1环境复制设置
-        self.base_envi = "xqdsj-stagingtest1"
-        self.school_id = 63
-
-        username = "testOp01"
-        password = "c50d98c79dbdb8049ab1571444771e68"
-
-        self._update_headers()
-
-        self.login_and_get_auth_token(username, password)
-        self.switch_school()
+        self.login_to_school(base_envi="xqdsj-stagingtest1", school_id=63, username="testOp01",
+                             password="c50d98c79dbdb8049ab1571444771e68")
 
         # 获取英语考试id
-        examination_id = 10121
-        data = self.get_answercard_detail(examination_id)
+        examination_id_new = kwargs.get('examination_id', 10121)
+        data = self.get_answercard_detail(examination_id_new)
         datalist = self.extract_data(data)
 
         exampaper_data = datalist[1]
@@ -574,33 +601,24 @@ class ApiRequest:
 
         # 设置智能批阅阅卷设置
         if not ai_marking_info_list:
-            print("原试卷未设置智能批阅阅卷设置")
+            logging.info("原试卷未设置智能批阅阅卷设置")
         else:
             for data in ai_marking_info_list:
                 self.save_ai_marking_info(data)
 
-        print("复制智能阅卷设置成功")
+        logging.info("复制智能阅卷设置成功")
 
-    def copy_exam(self):
+    def copy_exam(self, **kwargs):
         """
         复制考试
         """
         # examinationId = input("请输入考试 examinationId ")
         # examination_id = 21507
-        examination_id = 20680
+        examination_id = kwargs.get('examination_id', 22011)
 
         # 生产拿去考试信息 examination_id =21365
-        self.base_envi = "xqdsj"
-        self.school_id = 7
-
-        username = "13951078683@xuece"
-        password = "c50d98c79dbdb8049ab1571444771e68"
-
-        self._update_headers()
-        self.configure_logging()
-
-        self.login_and_get_auth_token(username, password)
-        self.switch_school()
+        self.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
+                             password="c50d98c79dbdb8049ab1571444771e68")
 
         data = self.get_answercard_detail(examination_id)
         datalist = self.extract_data(data)
@@ -613,18 +631,9 @@ class ApiRequest:
         # 获取考试的智能批阅设置
         ai_marking_info = self.get_ai_marking_info(exampaper_id)
 
-        # test1环境创建镜像考试
-        self.base_envi = "xqdsj-stagingtest1"
-        self.school_id = 63
-        self._update_headers()
-
-        username = "testOp01"
-        password = "c50d98c79dbdb8049ab1571444771e68"
-
-        self._update_headers()
-
-        self.login_and_get_auth_token(username, password)
-        self.switch_school()
+        # test1环境复制设置
+        self.login_to_school(base_envi="xqdsj-stagingtest1", school_id=63, username="testOp01",
+                             password="c50d98c79dbdb8049ab1571444771e68")
 
         examination_id = self.examin_create(exam_name)
         exam_info = self.get_examinfo(examination_id)
@@ -650,13 +659,13 @@ class ApiRequest:
 
         # 设置智能批阅阅卷设置
         if not ai_marking_info_list:
-            print("原试卷未设置智能批阅阅卷设置")
+            logging.info("原试卷未设置智能批阅阅卷设置")
         else:
             for data in ai_marking_info_list:
                 self.save_ai_marking_info(data)
 
-        print("复制成功")
-        print(
+        logging.info("复制成功")
+        logging.info(
             f"考试地址：https://stagingtest1.xuece.cn/editor/editAnswerTable"
             f"?examinationId={examination_id}&step=2&isIntelligence=2"
         )
@@ -667,25 +676,14 @@ class ApiRequest:
         :param kwargs:
         :return: None
         """
-        examination_id = 20680
+        examination_id = kwargs.get('examination_id', 22011)
 
         batch_size = kwargs.get('batch_size', 50)
         max_students = kwargs.get('max_students')
 
-        # 设置基础信息
-        self.base_envi = "xqdsj"
-        self.school_id = 7
-
-        username = "market03"
-        password = "67391ff79276f08ec5934bc99787eb4e"
-
-        # 更新请求头和日志
-        self._update_headers()
-        self.configure_logging()
-
-        # 登录并切换学校
-        self.login_and_get_auth_token(username, password)
-        self.switch_school()
+        # 生产拿去考试信息
+        self.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
+                             password="c50d98c79dbdb8049ab1571444771e68")
 
         # 获取答题卡详情
         data = self.get_answercard_detail(examination_id)
@@ -715,23 +713,20 @@ class ApiRequest:
 
         for i in range(0, total_students, batch_size):
             batch_stu_list = stu_list[i:i + batch_size]
+            urls = asyncio.run(self.get_all_stu_answercards(exampaper_id, batch_stu_list))
+            url_list.extend(urls)
+            self.download_images(url_list, exam_name=datalist[1]['title'])
+            url_list.clear()  # 每次下载完成后清空
 
-            # 获取每个学生的答题卡图片 URL
-            for stu in batch_stu_list:
-                stu_id = stu['id']
-                url_list.extend(self.get_stu_answercards(exampaper_id, stu_id))
-
-            # 下载当前批次的图片
-            self.download_images(url_list, exam_name=exampaper_data['title'])
-
-            # 清空 URL 列表以释放内存
-            url_list.clear()
-
-        print("所有答题卡图片下载完成。")
+        logging.info("所有答题卡图片下载完成。")
 
 
 if __name__ == "__main__":
     api = ApiRequest()
-    # api.copy_exam()
-    # api.copy_ai_marking()
-    api.download_exam_images(max_students=20)
+    api.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
+                        password="c50d98c79dbdb8049ab1571444771e68")
+    examper_data = api.get_basicinfo(exampaper_id=30719)
+    print(examper_data)
+    api.copy_exam(examination_id=22011)
+    # api.copy_ai_marking(examination_id=22011, examination_id_new=10151)
+    api.download_exam_images(examination_id=22011, max_students=10)
