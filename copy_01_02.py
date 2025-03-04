@@ -1,6 +1,5 @@
 import asyncio
 import os
-import time
 
 import aiohttp
 import requests
@@ -15,17 +14,16 @@ class ApiRequest:
     # 构造函数 (__init__) 用于初始化类，并传入基础学校 ID。
     def __init__(self, **kwargs):
         # 设置环境和基础 URL。
-        self.base_envi = kwargs.get('base_envi', "xqdsj.xuece.cn")
-        self.base_url = f"https://{self.base_envi}"
-        self.base_host = f"{self.base_envi}"
+        self.base_envi = kwargs.get('base_envi', "xqdsj")
+        self.base_url = f"https://{self.base_envi}.xuece.cn"
+        self.base_host = f"{self.base_envi}.xuece.cn"
         self.base_school_id = None
         self.school_id = kwargs.get('school_id', 7)
-        self.target_school_id = kwargs.get('target_school_id', 63)
-        self.grade_code = kwargs.get('grade_code', 'S01')
         self.authtoken = None
 
         # 使用不同属性设置 HTTP 标头。
         self.headers = {
+            "Host": self.base_host,
             "XC-App-User-SchoolId": f"{self.base_school_id}",  # 学校 ID，可以稍后更改
             "AuthToken": f"{self.authtoken}"
         }
@@ -50,9 +48,10 @@ class ApiRequest:
 
     # 私有方法：更新 self.headers
     def _update_headers(self):
-        self.base_url = f"https://{self.base_envi}"
-        self.base_host = f"{self.base_envi}"
+        self.base_url = f"https://{self.base_envi}.xuece.cn"
+        self.base_host = f"{self.base_envi}.xuece.cn"
         self.headers = {
+            "Host": f"{self.base_envi}.xuece.cn",
             "XC-App-User-SchoolId": f"{self.base_school_id}",  # 学校 ID，可以稍后更改
             "AuthToken": f"{self.authtoken}"
         }
@@ -227,7 +226,6 @@ class ApiRequest:
         :return:exam的id
         """
         import time
-        classorg_list = self.get_classorg_list()
         # 获取当前时间的时间戳（单位：秒）
         timestamp = int(time.time() * 1000)
 
@@ -237,10 +235,11 @@ class ApiRequest:
             "examtypeCode": "HOMEWORK",
             "examDatetime": timestamp,
             "examName": exam_name,
-            "gradeCode": self.grade_code,  # 目前写死学校只能用一中高三
+            "gradeCode": "S03",  # 目前写死学校只能用一中高三
             "courseTypeCode[]": "ENGLISH",
-            "classorgIdList[]": classorg_list,
-            "schoolId": self.school_id,
+            "classorgIdList[]": list(range(1786, 1787)) + [1788],
+            # list(range(1222, 1231)),  list(range(1862, 1880)) + [3432],  # 目前写死学校只能用一中高三所有年级
+            "schoolId": self.school_id,  # 目前写死学校只能用一中
             "courseRecommenders": {}
         }
 
@@ -431,13 +430,132 @@ class ApiRequest:
             logging.error("请求异常：%s", str(e))
             raise Exception(f"请求异常：{str(e)}")
 
+    def get_stu_list(self, exampaper_id, exam_school_id, **kwargs):
+        """
+        获取学生列表
+        :param exampaper_id: 考试试卷 ID
+        :param exam_school_id: 学校 ID
+        :param kwargs: 其他可选参数，例如 uploaded
+        :return: 学生列表 (stu_list)
+        """
+        # 构建请求的 URL 和参数
+        url = f"{self.base_url}/api/examcenter/teacher/recognitionclient/class/namelist"
+        params = {
+            "exampaperId": exampaper_id,
+            "schoolId": exam_school_id,
+        }
+
+        try:
+            # 发送 GET 请求并检查响应状态
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()  # 自动抛出异常，如果状态码不为 200
+
+            # 解析返回的数据
+            data = response.json().get('data', [])
+
+            # 合并所有班级的学生列表
+            stu_list = []
+            for exam_class in data:
+                stu_list.extend(exam_class.get('stuList', []))
+
+            # 根据 uploaded 参数进行筛选（如果提供）
+            uploaded = kwargs.get('uploaded')
+            if uploaded is not None:
+                stu_list = [stu for stu in stu_list if stu.get("uploaded") == uploaded]
+
+            return stu_list
+
+        except requests.exceptions.RequestException as e:
+            logging.error("请求异常：%s", str(e))
+            raise Exception(f"请求异常：{str(e)}")
         except json.JSONDecodeError as e:
             logging.error("JSON 解析错误：%s", str(e))
             raise Exception(f"JSON 解析错误：{str(e)}")
 
+    async def get_stu_answercards(self, session, exampaper_id, stu_id):
+        """
+        获取学生的试卷url
+        :param session:
+        :param exampaper_id:
+        :param stu_id:
+        :return: stu_img_url_list
+        """
+        url = f"{self.base_url}/api/examcenter/teacher/recognitionclient/exampaper/stu"
+        params = {
+            "exampaperId": exampaper_id,
+            "stuUserId": stu_id,
+        }
+
+        try:
+            async with session.get(url, headers=self.headers, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    stu_img_urls = data['data']['stuAnswerImgurls']
+                    stu_img_url_list = stu_img_urls.split("@##@")
+                    return stu_img_url_list
+                else:
+                    logging.error("请求失败，状态码为：%d", response.status)
+                    raise Exception(f"请求失败，状态码为：{response.status}")
+        except requests.exceptions.RequestException as e:
+            logging.error("请求异常：%s", str(e))
+            raise Exception(f"请求异常：{str(e)}")
+
+    async def get_all_stu_answercards(self, exampaper_id, stu_list):
+        async with aiohttp.ClientSession() as session:
+            tasks = [self.get_stu_answercards(session, exampaper_id, stu['id']) for stu in stu_list]
+            results = await asyncio.gather(*tasks)
+            return [url for sublist in results for url in sublist]
+
+    @staticmethod
+    def download_images(url_list, **kwargs):
+        """
+        下载图片的函数，从给定的 URL 列表中下载图片
+        :param url_list:
+        :param kwargs:
+        :return:
+        """
+        # 从 kwargs 中获取保存目录，如果未提供则默认为当前工作目录
+        save_directory = kwargs.get('save_directory', os.getcwd())
+        exam_name = kwargs.get('exam_name')
+
+        # 如果提供了考试名称，则创建以考试名称为子目录的保存路径
+        if exam_name:
+            save_directory = os.path.join(save_directory, exam_name)
+        else:
+            # 如果未提供考试名称，则创建默认的 'images' 文件夹来保存图片
+            save_directory = os.path.join(save_directory, 'images')
+
+        # 如果保存目录不存在，则创建该目录
+        if not os.path.exists(save_directory):
+            os.makedirs(save_directory)
+
+        # 遍历 URL 列表，下载每张图片，使用 tqdm 显示总进度
+        with tqdm(total=len(url_list), unit='file', desc='Downloading images') as pbar:
+            for url in url_list:
+                # 从 URL 中提取文件名，并创建完整的文件路径
+                filename = os.path.join(save_directory, os.path.basename(url))
+                try:
+                    # 发送 GET 请求，使用 stream 模式以便逐步读取内容
+                    response = requests.get(url, stream=True, timeout=10)
+                    response.raise_for_status()  # 检查请求是否成功（状态码 200）
+                    # total_size = int(response.headers.get('content-length', 0))  # 获取文件总大小
+                    # 打开文件并以二进制模式写入内容，同时显示下载进度
+                    # with open(filename, 'wb') as f:
+                    #     for chunk in response.iter_content(chunk_size=1024):
+                    #         if chunk:  # 写入文件并更新进度条
+                    #             f.write(chunk)
+                    # 记录成功下载的日志
+                    logging.info(f"Downloaded: {filename}")
+                except requests.exceptions.RequestException as e:
+                    # 如果下载失败，记录错误日志
+                    logging.error(f"Failed to download {url}: {e}")
+                finally:
+                    # 更新 tqdm 进度条
+                    pbar.update(1)
+
     def login_to_school(self, **kwargs):
         self.base_envi = kwargs.get('base_envi', "xqdsj")
-        self.school_id = kwargs.get('school_id')
+        self.school_id = kwargs.get('school_id', 7)
 
         username = kwargs.get('username', "13951078683@xuece")
         password = kwargs.get('password', "c50d98c79dbdb8049ab1571444771e68")
@@ -448,27 +566,6 @@ class ApiRequest:
         self.login_and_get_auth_token(username, password)
         self.switch_school()
 
-    def get_classorg_list(self):
-        url = f"{self.base_url}/api/usercenter/teacher/classorg/listbygrade?schoolId={self.school_id}&gradeCode={self.grade_code}"
-
-        try:
-            response = requests.get(url, headers=self.headers)
-
-            if response.status_code == 200:
-                data = json.loads(response.content)
-                # data = json.dumps(data, indent=4, ensure_ascii=False)
-                data = data.get('data')
-                classorg_list = []
-                for i in data:
-                    classorg_list.append(i['id'])
-                return classorg_list
-            else:
-                logging.error("请求失败，状态码为：%d", response.status_code)
-                raise Exception(f"请求失败，状态码为：{response.status_code}")
-        except requests.exceptions.RequestException as e:
-            logging.error("请求异常：%s", str(e))
-            raise Exception(f"请求异常：{str(e)}")
-
     def copy_ai_marking(self, **kwargs):
         """
         复制智能阅卷设置
@@ -478,7 +575,7 @@ class ApiRequest:
         examination_id = kwargs.get('examination_id', 22011)
 
         # 生产拿去考试信息 examination_id =21365
-        self.login_to_school(base_envi="xqdsj.xuece.cn", school_id=7, username="13951078683@xuece",
+        self.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
                              password="c50d98c79dbdb8049ab1571444771e68")
 
         data = self.get_answercard_detail(examination_id)
@@ -491,8 +588,7 @@ class ApiRequest:
         ai_marking_info = self.get_ai_marking_info(exampaper_id)
 
         # test1环境复制设置
-        self.login_to_school(base_envi="xuece-xqdsj-stagingtest1.unisolution.cn", school_id=2,
-                             username="testOp01",
+        self.login_to_school(base_envi="xqdsj-stagingtest1", school_id=63, username="testOp01",
                              password="c50d98c79dbdb8049ab1571444771e68")
 
         # 获取英语考试id
@@ -520,11 +616,10 @@ class ApiRequest:
         """
         # examinationId = input("请输入考试 examinationId ")
         # examination_id = 21507
-        examination_id = kwargs.get('examination_id', 22011)
-        school_id = kwargs.get('school_id', self.target_school_id)
+        examination_id = kwargs.get('examination_id', 10210)
 
         # 生产拿去考试信息 examination_id =21365
-        self.login_to_school(base_envi="xqdsj.xuece.cn", school_id=7, username="13951078683@xuece",
+        self.login_to_school(base_envi="xqdsj-stagingtest1", school_id=63, username="testOp01",
                              password="c50d98c79dbdb8049ab1571444771e68")
 
         data = self.get_answercard_detail(examination_id)
@@ -539,8 +634,7 @@ class ApiRequest:
         ai_marking_info = self.get_ai_marking_info(exampaper_id)
 
         # test1环境复制设置
-        self.login_to_school(base_envi="xuece-xqdsj-stagingtest1.unisolution.cn", school_id=school_id,
-                             username="testOp01",
+        self.login_to_school(base_envi="xqdsj-stagingtest2", school_id=63, username="testOp01",
                              password="c50d98c79dbdb8049ab1571444771e68")
 
         examination_id = self.examin_create(exam_name)
@@ -561,7 +655,6 @@ class ApiRequest:
 
         answercard_id = answercard_data['id']
         # 发布答题卡
-        time.sleep(5)
         self.publish_answercard(answercard_id)
 
         ai_marking_info_list = self.excute_marking_info(exampaper_id, ai_marking_info)
@@ -575,17 +668,70 @@ class ApiRequest:
 
         logging.info("复制成功")
         logging.info(
-            f"考试地址：https://xuece-xqdsj-stagingtest1.unisolution.cn/editor/editAnswerTable"
+            f"考试地址：https://stagingtest1.xuece.cn/editor/editAnswerTable"
             f"?examinationId={examination_id}&step=2&isIntelligence=2"
         )
 
+    def download_exam_images(self, **kwargs):
+        """
+        下载考试的所有学生答题卡图片。
+        :param kwargs:
+        :return: None
+        """
+        examination_id = kwargs.get('examination_id', 22011)
+
+        batch_size = kwargs.get('batch_size', 50)
+        max_students = kwargs.get('max_students')
+
+        # 生产拿去考试信息
+        self.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
+                             password="c50d98c79dbdb8049ab1571444771e68")
+
+        # 获取答题卡详情
+        data = self.get_answercard_detail(examination_id)
+        datalist = self.extract_data(data)
+
+        exampaper_data = datalist[1]
+        exampaper_id = exampaper_data['id']
+
+        # 获取考试信息
+        exam_info = self.get_examinfo(examination_id)
+        exam_school_list = exam_info['schoolInfoList']
+        exam_school_id_list = [school['schoolId'] for school in exam_school_list]
+
+        # 取第一个学校的 ID
+        exam_school_id = exam_school_id_list[0]
+
+        # 获取已上传答题卡的学生列表
+        stu_list = self.get_stu_list(exampaper_id, exam_school_id, uploaded=True)
+
+        # 如果设置了最大学生数量，则截取学生列表
+        if max_students is not None:
+            stu_list = stu_list[:max_students]
+
+        # 分批次处理学生列表，避免一次性处理过多学生导致内存不足
+        total_students = len(stu_list)
+        url_list = []
+
+        with tqdm(total=total_students, unit='stu', desc='stu images') as pbar:
+            for i in range(0, total_students, batch_size):
+                batch_stu_list = stu_list[i:i + batch_size]
+                urls = asyncio.run(self.get_all_stu_answercards(exampaper_id, batch_stu_list))
+                url_list.extend(urls)
+                self.download_images(url_list, exam_name=datalist[1]['title'])
+                url_list.clear()  # 每次下载完成后清空
+
+                pbar.update(batch_size)
+
+            logging.info("所有答题卡图片下载完成。")
+
 
 if __name__ == "__main__":
-    api = ApiRequest(target_school_id=63, grade_code="S01")
+    api = ApiRequest()
     # api.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
     #                     password="c50d98c79dbdb8049ab1571444771e68")
     # examper_data = api.get_basicinfo(exampaper_id=30719)
     # print(examper_data)
-    api.copy_exam(examination_id=26982)
-    # api.copy_ai_marking(examination_id=24230, examination_id_new=10187)
-    # api.download_exam_images(examination_id=24912, max_students=991)
+    api.copy_exam()
+    # api.copy_ai_marking(examination_id=23294, examination_id_new=10187)
+    # api.download_exam_images(examination_id=23294, max_students=200)
