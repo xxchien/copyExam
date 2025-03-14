@@ -22,6 +22,7 @@ class ApiRequest:
         self.school_id = kwargs.get('school_id', 7)
         self.target_school_id = kwargs.get('target_school_id', 63)
         self.grade_code = kwargs.get('grade_code', 'S01')
+        self.exam_course = kwargs.get('exam_course', 'ENGLISH')
         self.authtoken = None
 
         # 使用不同属性设置 HTTP 标头。
@@ -140,8 +141,7 @@ class ApiRequest:
             logging.error("请求异常：%s", str(e))
             raise Exception(f"请求异常：{str(e)}")
 
-    @staticmethod
-    def extract_data(data):
+    def extract_data(self, data):
         """
         处理数据，找出英语科目
         :param data:
@@ -151,8 +151,8 @@ class ApiRequest:
             parsed_json = json.loads(data)
             # 遍历data列表，查找courseCode=ENGLISH的元素
             for item in parsed_json['data']:
-                print("正在寻找courseCode=ENGLISH的元素")
-                if item['courseCode'] == 'ENGLISH':
+                print(f"正在寻找courseCode={self.exam_course}的元素")
+                if item['courseCode'] == self.exam_course:
                     english_data = item
                     answercard = english_data['answercard']
                     exampaper = english_data['exampaper']
@@ -237,8 +237,8 @@ class ApiRequest:
             "examtypeCode": "HOMEWORK",
             "examDatetime": timestamp,
             "examName": exam_name,
-            "gradeCode": self.grade_code,  # 目前写死学校只能用一中高三
-            "courseTypeCode[]": "ENGLISH",
+            "gradeCode": self.grade_code,
+            "courseTypeCode[]": self.exam_course,
             "classorgIdList[]": classorg_list,
             "schoolId": self.school_id,
             "courseRecommenders": {}
@@ -547,7 +547,7 @@ class ApiRequest:
         exam_info = self.get_examinfo(examination_id)
         exampaper_list = exam_info['exampapers']
         for exampaper in exampaper_list:
-            if exampaper['courseCode'] == "ENGLISH":
+            if exampaper['courseCode'] == self.exam_course:
                 exampaper_id = exampaper['id']
         self.create_manually(exampaper_id)
 
@@ -581,11 +581,5 @@ class ApiRequest:
 
 
 if __name__ == "__main__":
-    api = ApiRequest(target_school_id=63, grade_code="S01")
-    # api.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
-    #                     password="c50d98c79dbdb8049ab1571444771e68")
-    # examper_data = api.get_basicinfo(exampaper_id=30719)
-    # print(examper_data)
-    api.copy_exam(examination_id=26982)
-    # api.copy_ai_marking(examination_id=24230, examination_id_new=10187)
-    # api.download_exam_images(examination_id=24912, max_students=991)
+    api = ApiRequest(target_school_id=63, grade_code="S03", exam_course="GEOGRAPHIC")
+    api.copy_exam(examination_id=28640)
