@@ -141,7 +141,29 @@ class ApiRequest:
             logging.error("请求异常：%s", str(e))
             raise Exception(f"请求异常：{str(e)}")
 
-    def extract_data(self, data):
+    @staticmethod
+    def extract_exam_course_list(data):
+        """
+        处理数据，找出英语科目
+        :param data:
+        :return:
+        """
+        try:
+            exam_course_list = []
+            parsed_json = json.loads(data)
+            for item in parsed_json['data']:
+                exam_course_list.append(item['courseCode'])
+            else:
+                logging.error("考试中无学科")
+            return exam_course_list
+        except json.JSONDecodeError as e:
+            logging.error(f"JSON解析错误: {e}")
+            return None
+        except KeyError as e:
+            logging.error(f"字段提取错误: {e}")
+            return None
+
+    def extract_data(self, data, **kwargs):
         """
         处理数据，找出英语科目
         :param data:
@@ -149,13 +171,13 @@ class ApiRequest:
         """
         try:
             parsed_json = json.loads(data)
-            # 遍历data列表，查找courseCode=ENGLISH的元素
+            exam_course = kwargs.get('exam_course', self.exam_course)
             for item in parsed_json['data']:
-                print(f"正在寻找courseCode={self.exam_course}的元素")
-                if item['courseCode'] == self.exam_course:
-                    english_data = item
-                    answercard = english_data['answercard']
-                    exampaper = english_data['exampaper']
+                print(f"正在寻找courseCode={exam_course}的元素")
+                if item['courseCode'] == exam_course:
+                    exam_course_data = item
+                    answercard = exam_course_data['answercard']
+                    exampaper = exam_course_data['exampaper']
                     return [answercard, exampaper]
                 else:
                     logging.error("未匹配courseCode=ENGLISH的元素")
@@ -221,15 +243,18 @@ class ApiRequest:
         except Exception as e:
             print("智能批阅设置失败：", str(e))
 
-    def examin_create(self, exam_name):
+    def examin_create(self, exam_name, **kwargs):
         """
         用于创建考试
         :return:exam的id
         """
+
         import time
         classorg_list = self.get_classorg_list()
         # 获取当前时间的时间戳（单位：秒）
         timestamp = int(time.time() * 1000)
+
+        course_list = kwargs.get('exam_course_list', [self.exam_course])
 
         examin_create_url = f"{self.base_url}/api/examcenter/teacher/exam/examinfocreate"
 
@@ -238,7 +263,7 @@ class ApiRequest:
             "examDatetime": timestamp,
             "examName": exam_name,
             "gradeCode": self.grade_code,
-            "courseTypeCode[]": self.exam_course,
+            "courseTypeCode[]": course_list,
             "classorgIdList[]": classorg_list,
             "schoolId": self.school_id,
             "courseRecommenders": {}
@@ -544,8 +569,10 @@ class ApiRequest:
                              password="c50d98c79dbdb8049ab1571444771e68")
 
         examination_id = self.examin_create(exam_name)
+
         exam_info = self.get_examinfo(examination_id)
         exampaper_list = exam_info['exampapers']
+
         for exampaper in exampaper_list:
             if exampaper['courseCode'] == self.exam_course:
                 exampaper_id = exampaper['id']
@@ -579,7 +606,87 @@ class ApiRequest:
             f"?examinationId={examination_id}&step=2&isIntelligence=2"
         )
 
+    def copy_all_exam(self, **kwargs):
+        """
+        复制完整的考试
+        """
+        # examinationId = input("请输入考试 examinationId ")
+        # examination_id = 21507
+        examination_id = kwargs.get('examination_id', 22011)
+        school_id = kwargs.get('school_id', self.target_school_id)
+
+        # 生产拿去考试信息
+        self.login_to_school(base_envi="xqdsj.xuece.cn", school_id=7, username="13951078683@xuece",
+                             password="c50d98c79dbdb8049ab1571444771e68")
+
+        examination_data = self.get_answercard_detail(examination_id)
+        exam_course_list = self.extract_exam_course_list(examination_data)
+
+        datalist = self.extract_data(examination_data, exam_course=exam_course_list[0])
+        exampaper_data = datalist[1]
+        exam_name = exampaper_data['title']
+        # test1环境复制设置
+        self.login_to_school(base_envi="xuece-xqdsj-stagingtest1.unisolution.cn", school_id=school_id,
+                             username="testOp01",
+                             password="c50d98c79dbdb8049ab1571444771e68")
+        examination_id = self.examin_create(exam_name, exam_course_list=exam_course_list)
+        exam_info = self.get_examinfo(examination_id)
+        exampaper_list = exam_info['exampapers']
+
+        for course in exam_course_list:
+
+            datalist = self.extract_data(examination_data, exam_course=course)
+
+            answercard_data = datalist[0]
+            exampaper_data = datalist[1]
+            exampaper_id = exampaper_data['id']
+
+            # 生产拿去考试信息
+            self.login_to_school(base_envi="xqdsj.xuece.cn", school_id=7, username="13951078683@xuece",
+                                 password="c50d98c79dbdb8049ab1571444771e68")
+            # 获取考试的智能批阅设置
+            ai_marking_info = self.get_ai_marking_info(exampaper_id)
+
+            # test1环境复制设置
+            self.login_to_school(base_envi="xuece-xqdsj-stagingtest1.unisolution.cn", school_id=school_id,
+                                 username="testOp01",
+                                 password="c50d98c79dbdb8049ab1571444771e68")
+
+            for exampaper in exampaper_list:
+                if exampaper['courseCode'] == course:
+                    exampaper_id = exampaper['id']
+            self.create_manually(exampaper_id)
+
+            self.update_structureseq(exampaper_data, exampaper_id)
+            self.save_editinfo(answercard_data, exampaper_id)
+
+            # 获取新考试答题卡id
+            data = self.get_answercard_detail(examination_id)
+            datalist = self.extract_data(data, exam_course=course)
+            answercard_data = datalist[0]
+
+            answercard_id = answercard_data['id']
+            # 发布答题卡
+            time.sleep(2)
+            self.publish_answercard(answercard_id)
+
+            ai_marking_info_list = self.excute_marking_info(exampaper_id, ai_marking_info)
+
+            # 设置智能批阅阅卷设置
+            if not ai_marking_info_list:
+                logging.info("原试卷未设置智能批阅阅卷设置")
+            else:
+                for data in ai_marking_info_list:
+                    self.save_ai_marking_info(data)
+
+            logging.info("复制成功")
+            logging.info(
+                f"考试地址：https://xuece-xqdsj-stagingtest1.unisolution.cn/editor/editAnswerTable"
+                f"?examinationId={examination_id}&step=2&isIntelligence=2"
+            )
+
 
 if __name__ == "__main__":
-    api = ApiRequest(target_school_id=63, grade_code="S03", exam_course="GEOGRAPHIC")
-    api.copy_exam(examination_id=28640)
+    api = ApiRequest(target_school_id=63, grade_code="S03", exam_course="ENGLISH")
+    # api.copy_exam(examination_id=28681)
+    api.copy_all_exam(examination_id=20108)

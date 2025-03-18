@@ -347,8 +347,6 @@ class ApiRequest:
                     self.login_to_school()  # 重新登录
         return url_list
 
-
-
     def download_exam_images(self, **kwargs):
         """
         下载考试的所有学生答题卡图片。
@@ -391,6 +389,6 @@ if __name__ == "__main__":
     # print(examper_data)
     # api.copy_exam(examination_id=23294)
     # api.copy_ai_marking(examination_id=22011, examination_id_new=10151)
-    api.download_exam_images(examination_id=22011, course_code='ENGLISH')
+    api.download_exam_images(examination_id=28082, course_code='CHINESE')
 
 # TODO: 目前后端做了接口限制，生产环境1min内限制接口数量450个，当出发接口限制时重新登录，换token
