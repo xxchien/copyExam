@@ -10,7 +10,6 @@ from tqdm import tqdm
 
 # 该代码定义了一个名为 "ApiRequest" 的类，用于进行 API 请求和执行特定操作。
 class ApiRequest:
-    MAX_RETRIES = 1  # 最大重试次数
 
     # 构造函数 (__init__) 用于初始化类，并传入基础学校 ID。
     def __init__(self, **kwargs):
@@ -19,7 +18,7 @@ class ApiRequest:
         self.base_url = f"https://{self.base_envi}.xuece.cn"
         self.base_host = f"{self.base_envi}.xuece.cn"
         self.base_school_id = None
-        self.school_id = kwargs.get('school_id', 7)
+        self.school_id = kwargs.get('school_id', 5)
         self.authtoken = None
 
         # 使用不同属性设置 HTTP 标头。
@@ -31,7 +30,7 @@ class ApiRequest:
 
         # 配置日志记录。
         self.log_file = 'api_requests.log'
-        self.log_level = logging.INFO
+        self.log_level = logging.ERROR
         self.log_format = '%(asctime)s - %(levelname)s: %(message)s'
 
         # 限制并发数
@@ -268,21 +267,16 @@ class ApiRequest:
         }
 
         async with self.semaphore:
-            for attempt in range(5):  # 增加重试次数到5次
-                try:
-                    async with session.get(url, headers=self.headers, params=params) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            return data['data']['stuAnswerImgurls'].split("@##@")
-                        elif response.status == 429:
-                            await asyncio.sleep(2 ** (attempt + 1))  # 使用更大的指数退避
-                            continue
-                        else:
-                            logging.error(f"请求失败，状态码为：{response.status}")
-                            return None
-                except Exception as e:
-                    logging.error(f"请求异常：{e}")
-                    await asyncio.sleep(2 ** (attempt + 1))
+            try:
+                async with session.get(url, headers=self.headers, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data['data']['stuAnswerImgurls'].split("@##@")
+                    else:
+                        logging.error(f"请求失败，状态码为：{response.status}")
+                        return None
+            except Exception as e:
+                logging.error(f"请求异常：{e}")
 
             logging.error(f"请求失败，学生ID: {stu_id} 达到最大重试次数")
             self.failed_students.append(stu_id)
@@ -359,7 +353,7 @@ class ApiRequest:
         course_code = kwargs.get('course_code', 'ENGLISH')
 
         # 登录学校获取考试信息
-        self.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
+        self.login_to_school(base_envi="xqdsj", school_id=self.school_id, username="13951078683@xuece",
                              password="c50d98c79dbdb8049ab1571444771e68")
 
         # 获取答题卡和考试详情
@@ -382,13 +376,7 @@ class ApiRequest:
 
 
 if __name__ == "__main__":
-    api = ApiRequest()
-    # api.login_to_school(base_envi="xqdsj", school_id=7, username="13951078683@xuece",
-    #                     password="c50d98c79dbdb8049ab1571444771e68")
-    # examper_data = api.get_basicinfo(exampaper_id=30719)
-    # print(examper_data)
-    # api.copy_exam(examination_id=23294)
-    # api.copy_ai_marking(examination_id=22011, examination_id_new=10151)
-    api.download_exam_images(examination_id=28082, course_code='CHINESE')
+    api = ApiRequest(school_id = 2)
+    api.download_exam_images(examination_id=36300, course_code='ENGLISH')
 
-# TODO: 目前后端做了接口限制，生产环境1min内限制接口数量450个，当出发接口限制时重新登录，换token
+# TODO: 目前后端做了接口限制，生产环境1min内限制接口数量450个，当出发接口限制时重新登录，换tokn

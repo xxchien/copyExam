@@ -1,7 +1,6 @@
 import asyncio
 import os
 import time
-
 import aiohttp
 import requests
 import json
@@ -9,7 +8,6 @@ import logging
 from tqdm import tqdm
 
 
-# 该代码定义了一个名为 "ApiRequest" 的类，用于进行 API 请求和执行特定操作。
 class ApiRequest:
 
     # 构造函数 (__init__) 用于初始化类，并传入基础学校 ID。
@@ -501,9 +499,11 @@ class ApiRequest:
         TODO：后期添加清空智能阅卷设置，后再进行复制
         """
         examination_id = kwargs.get('examination_id', 22011)
+        target_base_envi = kwargs.get('target_base_envi', "xuece-xqdsj-stagingtest1.unisolution.cn")
+        copied_base_envi = kwargs.get('copied_base_envi', "xqdsj.xuece.cn")
 
         # 生产拿去考试信息 examination_id =21365
-        self.login_to_school(base_envi="xqdsj.xuece.cn", school_id=7, username="13951078683@xuece",
+        self.login_to_school(base_envi=copied_base_envi, school_id=self.school_id, username="13951078683@xuece",
                              password="c50d98c79dbdb8049ab1571444771e68")
 
         data = self.get_answercard_detail(examination_id)
@@ -516,9 +516,9 @@ class ApiRequest:
         ai_marking_info = self.get_ai_marking_info(exampaper_id)
 
         # test1环境复制设置
-        self.login_to_school(base_envi="xuece-xqdsj-stagingtest1.unisolution.cn", school_id=2,
+        self.login_to_school(base_envi=target_base_envi, school_id=self.target_school_id,
                              username="testOp01",
-                             password="c50d98c79dbdb8049ab1571444771e68")
+                             password="3a352bebcc6ac5cc2c6611d751727729")
 
         # 获取英语考试id
         examination_id_new = kwargs.get('examination_id_new', 10121)
@@ -546,11 +546,18 @@ class ApiRequest:
         # examinationId = input("请输入考试 examinationId ")
         # examination_id = 21507
         examination_id = kwargs.get('examination_id', 22011)
-        school_id = kwargs.get('school_id', self.target_school_id)
+        school_id = kwargs.get('school_id', self.school_id)
+        target_school_id = kwargs.get('target_school_id', self.target_school_id)
+        target_base_envi = kwargs.get('target_base_envi', "xuece-xqdsj-stagingtest1.unisolution.cn")
+        copied_base_envi = kwargs.get('copied_base_envi', "xqdsj.xuece.cn")
+        copied_username = kwargs.get('copied_username', "13951078683@xuece")
+        copied_password = kwargs.get('copied_password', "c50d98c79dbdb8049ab1571444771e68")
+        target_copied_username = kwargs.get('target_copied_username', "testOp02")
+        target_copied_password = kwargs.get('target_copied_password', "3a352bebcc6ac5cc2c6611d751727729")
 
         # 生产拿去考试信息 examination_id =21365
-        self.login_to_school(base_envi="xqdsj.xuece.cn", school_id=7, username="13951078683@xuece",
-                             password="c50d98c79dbdb8049ab1571444771e68")
+        self.login_to_school(base_envi=copied_base_envi, school_id=school_id, username=copied_username,
+                             password=copied_password)
 
         data = self.get_answercard_detail(examination_id)
         datalist = self.extract_data(data)
@@ -564,9 +571,9 @@ class ApiRequest:
         ai_marking_info = self.get_ai_marking_info(exampaper_id)
 
         # test1环境复制设置
-        self.login_to_school(base_envi="xuece-xqdsj-stagingtest1.unisolution.cn", school_id=school_id,
-                             username="testOp01",
-                             password="c50d98c79dbdb8049ab1571444771e68")
+        self.login_to_school(base_envi=target_base_envi, school_id=target_school_id,
+                             username=target_copied_username,
+                             password=target_copied_password)
 
         examination_id = self.examin_create(exam_name)
 
@@ -614,9 +621,12 @@ class ApiRequest:
         # examination_id = 21507
         examination_id = kwargs.get('examination_id', 22011)
         school_id = kwargs.get('school_id', self.target_school_id)
+        target_base_envi = kwargs.get('target_base_envi', "xuece-xqdsj-stagingtest1.unisolution.cn")
+        copied_base_envi = kwargs.get('copied_base_envi', "xqdsj.xuece.cn")
+        copied_username = kwargs.get('copied_username', "13951078683@xuece")
 
         # 生产拿去考试信息
-        self.login_to_school(base_envi="xqdsj.xuece.cn", school_id=7, username="13951078683@xuece",
+        self.login_to_school(base_envi=copied_base_envi, school_id=self.school_id, username=copied_username,
                              password="c50d98c79dbdb8049ab1571444771e68")
 
         examination_data = self.get_answercard_detail(examination_id)
@@ -626,9 +636,9 @@ class ApiRequest:
         exampaper_data = datalist[1]
         exam_name = exampaper_data['title']
         # test1环境复制设置
-        self.login_to_school(base_envi="xuece-xqdsj-stagingtest1.unisolution.cn", school_id=school_id,
-                             username="testOp01",
-                             password="c50d98c79dbdb8049ab1571444771e68")
+        self.login_to_school(base_envi=target_base_envi, school_id=school_id,
+                             username="testOp02",
+                             password="3a352bebcc6ac5cc2c6611d751727729")
         examination_id = self.examin_create(exam_name, exam_course_list=exam_course_list)
         exam_info = self.get_examinfo(examination_id)
         exampaper_list = exam_info['exampapers']
@@ -642,15 +652,15 @@ class ApiRequest:
             exampaper_id = exampaper_data['id']
 
             # 生产拿去考试信息
-            self.login_to_school(base_envi="xqdsj.xuece.cn", school_id=7, username="13951078683@xuece",
-                                 password="c50d98c79dbdb8049ab1571444771e68")
+            self.login_to_school(base_envi=copied_base_envi, school_id=self.school_id, username=copied_username,
+                                 password="3a352bebcc6ac5cc2c6611d751727729")
             # 获取考试的智能批阅设置
             ai_marking_info = self.get_ai_marking_info(exampaper_id)
 
             # test1环境复制设置
-            self.login_to_school(base_envi="xuece-xqdsj-stagingtest1.unisolution.cn", school_id=school_id,
-                                 username="testOp01",
-                                 password="c50d98c79dbdb8049ab1571444771e68")
+            self.login_to_school(base_envi=target_base_envi, school_id=school_id,
+                                 username="testOp02",
+                                 password="3a352bebcc6ac5cc2c6611d751727729")
 
             for exampaper in exampaper_list:
                 if exampaper['courseCode'] == course:
@@ -681,12 +691,16 @@ class ApiRequest:
 
             logging.info("复制成功")
             logging.info(
-                f"考试地址：https://xuece-xqdsj-stagingtest1.unisolution.cn/editor/editAnswerTable"
+                f"考试地址：https://{target_base_envi}/editor/editAnswerTable"
                 f"?examinationId={examination_id}&step=2&isIntelligence=2"
             )
 
 
 if __name__ == "__main__":
-    api = ApiRequest(target_school_id=63, grade_code="S03", exam_course="ENGLISH")
-    # api.copy_exam(examination_id=28681)
-    api.copy_all_exam(examination_id=20108)
+    for i in range(1):
+        print(f"正在执行第 {i + 1} 次...")
+        api = ApiRequest(school_id=2, target_school_id=2, grade_code="S03")
+        api.copy_exam(copied_username="13951078683@xuece", copied_password="c50d98c79dbdb8049ab1571444771e68",
+                      target_copied_username="testOp02", target_copied_password="3a352bebcc6ac5cc2c6611d751727729",
+                      copied_base_envi="xqdsj.xuece.cn", examination_id=36300,
+                      target_base_envi="xuece-xqdsj-stagingtest1.unisolution.cn")
