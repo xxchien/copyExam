@@ -617,17 +617,20 @@ class ApiRequest:
         """
         复制完整的考试
         """
-        # examinationId = input("请输入考试 examinationId ")
-        # examination_id = 21507
+
         examination_id = kwargs.get('examination_id', 22011)
-        school_id = kwargs.get('school_id', self.target_school_id)
+        school_id = kwargs.get('school_id', self.school_id)
+        target_school_id = kwargs.get('target_school_id', self.target_school_id)
         target_base_envi = kwargs.get('target_base_envi', "xuece-xqdsj-stagingtest1.unisolution.cn")
         copied_base_envi = kwargs.get('copied_base_envi', "xqdsj.xuece.cn")
         copied_username = kwargs.get('copied_username', "13951078683@xuece")
+        copied_password = kwargs.get('copied_password', "c50d98c79dbdb8049ab1571444771e68")
+        target_copied_username = kwargs.get('target_copied_username', "testOp02")
+        target_copied_password = kwargs.get('target_copied_password', "3a352bebcc6ac5cc2c6611d751727729")
 
         # 生产拿去考试信息
-        self.login_to_school(base_envi=copied_base_envi, school_id=self.school_id, username=copied_username,
-                             password="c50d98c79dbdb8049ab1571444771e68")
+        self.login_to_school(base_envi=copied_base_envi, school_id=school_id, username=copied_username,
+                             password=copied_password)
 
         examination_data = self.get_answercard_detail(examination_id)
         exam_course_list = self.extract_exam_course_list(examination_data)
@@ -636,9 +639,9 @@ class ApiRequest:
         exampaper_data = datalist[1]
         exam_name = exampaper_data['title']
         # test1环境复制设置
-        self.login_to_school(base_envi=target_base_envi, school_id=school_id,
-                             username="testOp02",
-                             password="3a352bebcc6ac5cc2c6611d751727729")
+        self.login_to_school(base_envi=target_base_envi, school_id=target_school_id,
+                             username=target_copied_username,
+                             password=target_copied_password)
         examination_id = self.examin_create(exam_name, exam_course_list=exam_course_list)
         exam_info = self.get_examinfo(examination_id)
         exampaper_list = exam_info['exampapers']
@@ -652,15 +655,15 @@ class ApiRequest:
             exampaper_id = exampaper_data['id']
 
             # 生产拿去考试信息
-            self.login_to_school(base_envi=copied_base_envi, school_id=self.school_id, username=copied_username,
-                                 password="3a352bebcc6ac5cc2c6611d751727729")
+            self.login_to_school(base_envi=copied_base_envi, school_id=school_id, username=copied_username,
+                                 password=copied_password)
             # 获取考试的智能批阅设置
             ai_marking_info = self.get_ai_marking_info(exampaper_id)
 
             # test1环境复制设置
-            self.login_to_school(base_envi=target_base_envi, school_id=school_id,
-                                 username="testOp02",
-                                 password="3a352bebcc6ac5cc2c6611d751727729")
+            self.login_to_school(base_envi=target_base_envi, school_id=target_school_id,
+                                 username=target_copied_username,
+                                 password=target_copied_password)
 
             for exampaper in exampaper_list:
                 if exampaper['courseCode'] == course:
